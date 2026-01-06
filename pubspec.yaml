@@ -1,0 +1,25 @@
+name: bus_line
+description: A live bus tracking app
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.2
+  http: ^1.2.2
+  csv: ^6.0.0
+  flutter_svg: ^2.0.10
+  path_provider: ^2.1.4
+
+flutter:
+  assets:
+    - assets/gtfs/stops.txt
+    - assets/gtfs/shapes.txt
+    - assets/icons/
