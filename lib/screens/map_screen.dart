@@ -13,6 +13,8 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
+double? _stableBusBearingDeg;
+
 class _MapScreenState extends State<MapScreen> {
   final LatLng reginaCenter = const LatLng(50.4452, -104.6189);
   bool _isOppositeDirection(double a, double b) {
@@ -44,7 +46,6 @@ class _MapScreenState extends State<MapScreen> {
   // If your bus.svg points LEFT by default, set this to +pi/2 or +pi etc.
   // Try 0 first. If bus faces wrong direction, change to:
   //   +pi (reverse) or +pi/2 (90deg) or -pi/2.
-  static const double _busSvgRotationOffsetRad = 0.0;
   // ============================================================
 
   @override
@@ -400,6 +401,17 @@ class _MapScreenState extends State<MapScreen> {
         }
       }
 
+      // Update stable bearing ONLY if this segment has real length
+      final a = pts[_busSegIndex];
+      final b = pts[_busSegIndex + 1];
+
+      final dx = (b.longitude - a.longitude).abs();
+      final dy = (b.latitude - a.latitude).abs();
+
+      if (dx > 1e-7 || dy > 1e-7) {
+        _stableBusBearingDeg = _bearing(a, b);
+      }
+
       setState(() {});
     });
   }
@@ -425,24 +437,44 @@ class _MapScreenState extends State<MapScreen> {
       final pts = routeShapes[_busShapeId];
       if (pts != null && pts.length >= 2) {
         final pos = _busPosition(pts);
-        final bearing = _bearing(
+        final bearingDeg = _stableBusBearingDeg ?? _bearing(
           pts[_busSegIndex],
           pts[_busSegIndex + 1],
-        ) *
-            pi /
-            180 +
-            _busSvgRotationOffsetRad;
-
+        );
+// bus.svg faces LEFT (west), so we align west to 0-rotation.
+// Also negate bearing to match Flutter's rotation direction.
         busMarkers.add(
           Marker(
             point: pos,
-            width: 30,
-            height: 30,
+            width: 36,
+            height: 36,
             child: Transform.rotate(
-              angle: bearing,
-              child: SvgPicture.asset(
-                'assets/icons/bus.svg',
-                fit: BoxFit.contain,
+              angle: - (bearingDeg - 90) * pi / 180,
+              // 🔑 PNG faces right → offset by -90°
+              alignment: Alignment.center,
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  border: Border.all(color: Colors.blue, width: 3),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 6,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Image.asset(
+                    'assets/icons/bus.png',
+                    width: 22,
+                    height: 22,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
           ),
