@@ -29,23 +29,38 @@ Renders GTFS routes, stops, and a moving bus marker on OpenStreetMap using
 ---
 
 ## Project Structure
-assets/
-├── gtfs/
-│   ├── shapes.txt
-│   └── stops.txt
-└── icons/
-├── bus.png
-├── stop_up.svg
-├── stop_down.svg
-├── stop_left.svg
-└── stop_right.svg
 
-lib/
-├── screens/
-│   └── map_screen.dart
-└── main.dart
+```
 
----
+bus_line/
+├── android/
+├── ios/
+├── lib/
+│   ├── main.dart
+│   ├── screens/
+│   │   └── map_screen.dart
+│   ├── widgets/
+│   │   └── (future reusable UI components)
+│   ├── utils/
+│   │   └── (math, bearing, helpers – optional)
+│   └── models/
+│       └── (GTFS / realtime models – optional)
+│
+├── assets/
+│   ├── gtfs/
+│   │   ├── shapes.txt
+│   │   └── stops.txt
+│   └── icons/
+│       ├── bus.png
+│       ├── stop_up.svg
+│       ├── stop_down.svg
+│       ├── stop_left.svg
+│       └── stop_right.svg
+│
+├── pubspec.yaml
+├── README.md
+└── .gitignore
+```
 
 ## Tech Stack
 
@@ -62,9 +77,10 @@ lib/
 ```bash
 flutter pub get
 flutter run
+```
 
-Status
-	•	Routes: ✅
-	•	Stops + direction icons: ✅
-	•	Moving bus marker: ✅
-	•	GTFS-Realtime: (planned)
+##Status
+- Routes: ✅
+- Stops + direction icons: ✅
+- Moving bus marker: ✅
+- GTFS-Realtime: (planned)
