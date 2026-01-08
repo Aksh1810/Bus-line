@@ -1,16 +1,86 @@
-# bus_line
+# Bus Line 🚌
 
-A new Flutter project.
+Flutter transit map app inspired by TransitLive.
 
-## Getting Started
+Renders GTFS routes, stops, and a moving bus marker on OpenStreetMap using
+`flutter_map`.
 
-This project is a starting point for a Flutter application.
+---
 
-A few resources to get you started if this is your first Flutter project:
+## Features
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- GTFS `shapes.txt` → route polylines
+- GTFS `stops.txt` → direction-aware stop icons
+- Animated bus marker moving along route
+- Stable bus orientation (no flipping at stops)
+- Zoom-based visibility for routes / stops / bus
+- Custom TransitLive-style bus marker (PNG)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+
+## Bus Marker Logic
+
+- Bus follows a GTFS shape (ordered by `shape_pt_sequence`)
+- Bearing calculated from current segment
+- Bearing stabilized across segments
+- PNG faces **west (left)** by default
+- Rotation applied to align PNG with travel direction
+
+---
+
+## Project Structure
+
+```
+
+bus_line/
+├── android/
+├── ios/
+├── lib/
+│   ├── main.dart
+│   ├── screens/
+│   │   └── map_screen.dart
+│   ├── widgets/
+│   │   └── (future reusable UI components)
+│   ├── utils/
+│   │   └── (math, bearing, helpers – optional)
+│   └── models/
+│       └── (GTFS / realtime models – optional)
+│
+├── assets/
+│   ├── gtfs/
+│   │   ├── shapes.txt
+│   │   └── stops.txt
+│   └── icons/
+│       ├── bus.png
+│       ├── stop_up.svg
+│       ├── stop_down.svg
+│       ├── stop_left.svg
+│       └── stop_right.svg
+│
+├── pubspec.yaml
+├── README.md
+└── .gitignore
+```
+
+## Tech Stack
+
+- Flutter
+- flutter_map
+- OpenStreetMap
+- latlong2
+- GTFS (static)
+
+---
+
+## Run
+
+```bash
+flutter pub get
+flutter run
+```
+
+##Status
+- Routes: ✅
+- Stops + direction icons: ✅
+- Moving bus marker: ✅
+- GTFS-Realtime: (planned)
