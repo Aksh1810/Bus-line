@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../models/bus.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -19,6 +22,15 @@ class _MapScreenState extends State<MapScreen> {
   final LatLng reginaCenter = const LatLng(50.4452, -104.6189);
   bool _isOppositeDirection(double a, double b) {
     return _angleDiff(a, b) > 135;
+  }
+
+  List <Bus> _buses = [];
+  Timer? _liveBusTimer;
+
+  double _busRotation(double bearingDeg) {
+    // Convert compass bearing (0=N) → Flutter angle (0=E)
+    // PNG faces WEST → add 180°
+    return (bearingDeg - 90 + 180) * pi / 180;
   }
 
   // shape_id -> polyline points
@@ -51,7 +63,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
+
+    _loadAll();          // ← REQUIRED
+    _fetchLiveBuses();
+
+    _liveBusTimer = Timer.periodic(
+      const Duration(seconds: 3),
+          (_) => _fetchLiveBuses(),
+    );
   }
 
   // 🚌 NEW
@@ -59,6 +78,24 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _busTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _fetchLiveBuses() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:3000/vehicles'),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+
+        setState(() {
+          _buses = data.map((e) => Bus.fromJson(e)).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Live bus fetch error: $e');
+    }
   }
 
   Future<void> _loadAll() async {
@@ -431,56 +468,42 @@ class _MapScreenState extends State<MapScreen> {
   // ============================================================
   @override
   Widget build(BuildContext context) {
-    final List<Marker> busMarkers = [];
 
-    if (_busShapeId != null && _currentZoom >= busVisibleZoom) {
-      final pts = routeShapes[_busShapeId];
-      if (pts != null && pts.length >= 2) {
-        final pos = _busPosition(pts);
-        final bearingDeg = _stableBusBearingDeg ?? _bearing(
-          pts[_busSegIndex],
-          pts[_busSegIndex + 1],
-        );
-// bus.svg faces LEFT (west), so we align west to 0-rotation.
-// Also negate bearing to match Flutter's rotation direction.
-        busMarkers.add(
-          Marker(
-            point: pos,
-            width: 36,
-            height: 36,
-            child: Transform.rotate(
-              angle: - (bearingDeg - 90) * pi / 180,
-              // 🔑 PNG faces right → offset by -90°
-              alignment: Alignment.center,
-              child: Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  border: Border.all(color: Colors.blue, width: 3),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 6,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
+    final List<Marker> busMarkers = _buses.map((bus) {
+      return Marker(
+        point: LatLng(bus.lat, bus.lon),
+        width: 36,
+        height: 36,
+        child: Transform.rotate(
+          angle: _busRotation(bus.bearing),
+          alignment: Alignment.center,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: Colors.blue, width: 3),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 6,
+                  offset: Offset(0, 3),
                 ),
-                child: Center(
-                  child: Image.asset(
-                    'assets/icons/bus.png',
-                    width: 22,
-                    height: 22,
-                    fit: BoxFit.contain,
-                  ),
-                ),
+              ],
+            ),
+            child: Center(
+              child: Image.asset(
+                'assets/icons/bus.png',
+                width: 22,
+                height: 22,
+                fit: BoxFit.contain,
               ),
             ),
           ),
-        );
-      }
-    }
+        ),
+      );
+    }).toList();
 
     return Stack(
       children: [
