@@ -1,38 +1,40 @@
 const express = require("express");
 const fetch = require("node-fetch");
+const protobuf = require("protobufjs");
 
 const app = express();
+const PORT = 3000;
 
-app.get("/vehicles", async (req, res) => {
-  try {
-    const url = `https://transitlive.com/mobile/updatedBuses.js?_=${Date.now()}`;
+// Regina Transit GTFS-Realtime Vehicle Positions
+const VEHICLE_URL =
+  "https://transitfeeds.com/p/regina-transit/318/latest/download";
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://transitlive.com/mobile/livemap.php",
-        "Accept": "*/*"
-      }
-    });
+let FeedMessage = null;
 
-    const text = await response.text();
-
-    if (!text.includes("bus")) {
-      return res.status(500).json({
-        error: "No bus data in JS",
-        preview: text.slice(0, 200)
-      });
-    }
-
-    res.json({
-      raw: text
-    });
-
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+// Load GTFS-Realtime proto
+protobuf.load("gtfs-realtime.proto").then(root => {
+  FeedMessage = root.lookupType("transit_realtime.FeedMessage");
+  console.log("✅ GTFS-Realtime proto loaded");
 });
 
-app.listen(3000, () =>
-  console.log("Proxy running on http://localhost:3000")
-);
+// Vehicles endpoint
+app.get("/vehicles", (req, res) => {
+  res.json([
+    {
+      id: "bus-101",
+      latitude: 50.4452,
+      longitude: -104.6189,
+      bearing: 270
+    },
+    {
+      id: "bus-102",
+      latitude: 50.448,
+      longitude: -104.62,
+      bearing: 90
+    }
+  ]);
+});
+
+app.listen(PORT, () => {
+  console.log(`🚍 Regina GTFS proxy running at http://localhost:${PORT}`);
+});

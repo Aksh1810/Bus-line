@@ -20,11 +20,12 @@ double? _stableBusBearingDeg;
 
 class _MapScreenState extends State<MapScreen> {
   final LatLng reginaCenter = const LatLng(50.4452, -104.6189);
+
   bool _isOppositeDirection(double a, double b) {
     return _angleDiff(a, b) > 135;
   }
 
-  List <Bus> _buses = [];
+  List<Bus> _buses = [];
   Timer? _liveBusTimer;
 
   double _busRotation(double bearingDeg) {
@@ -64,12 +65,12 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
 
-    _loadAll();          // ← REQUIRED
+    _loadAll(); // ← REQUIRED
     _fetchLiveBuses();
 
     _liveBusTimer = Timer.periodic(
       const Duration(seconds: 3),
-          (_) => _fetchLiveBuses(),
+      (_) => _fetchLiveBuses(),
     );
   }
 
@@ -77,6 +78,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _busTimer?.cancel();
+    _liveBusTimer?.cancel(); // 🔑 ADD THIS
     super.dispose();
   }
 
@@ -92,6 +94,8 @@ class _MapScreenState extends State<MapScreen> {
         setState(() {
           _buses = data.map((e) => Bus.fromJson(e)).toList();
         });
+
+        debugPrint('Buses received: ${_buses.length}');
       }
     } catch (e) {
       debugPrint('Live bus fetch error: $e');
@@ -104,7 +108,7 @@ class _MapScreenState extends State<MapScreen> {
     await _loadStopsAndAssignDirections();
 
     // 🚌 NEW: start the test bus only after shapes exist
-    _startTestBus();
+    // _startTestBus();
 
     setState(() => _loading = false);
   }
@@ -114,10 +118,8 @@ class _MapScreenState extends State<MapScreen> {
   ============================================================ */
   List<List<String>> _parseGtfs(String raw) {
     raw = raw.replaceFirst('\uFEFF', '');
-    final lines = raw
-        .split(RegExp(r'\r?\n'))
-        .where((l) => l.trim().isNotEmpty)
-        .toList();
+    final lines =
+        raw.split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
     if (lines.length < 2) return [];
     final delimiter = lines.first.contains('\t') ? '\t' : ',';
     return lines.map((l) => l.split(delimiter)).toList();
@@ -256,7 +258,7 @@ class _MapScreenState extends State<MapScreen> {
     List<_CandidateHit> pool = hits;
     if (hint != null) {
       final hinted =
-      hits.where((h) => _angleDiff(h.bearing, hint) <= 95).toList();
+          hits.where((h) => _angleDiff(h.bearing, hint) <= 95).toList();
       if (hinted.isNotEmpty) pool = hinted;
     }
 
@@ -270,9 +272,11 @@ class _MapScreenState extends State<MapScreen> {
 // 🔒 NEW: remove opposite-direction segments if majority agrees
     if (top.length >= 3) {
       final base = top.first.bearing;
-      final sameDir = top.where(
+      final sameDir = top
+          .where(
             (h) => !_isOppositeDirection(h.bearing, base),
-      ).toList();
+          )
+          .toList();
 
       if (sameDir.length >= 2) {
         top
@@ -365,6 +369,48 @@ class _MapScreenState extends State<MapScreen> {
   /* ============================================================
      MATH HELPERS
   ============================================================ */
+
+  LatLng _snapToRoutes(LatLng busPoint) {
+    LatLng? bestPoint;
+    double bestDist = double.infinity;
+
+    for (final pts in routeShapes.values) {
+      for (int i = 0; i < pts.length - 1; i++) {
+        final a = pts[i];
+        final b = pts[i + 1];
+
+        final snapped = _projectPoint(busPoint, a, b);
+        final d = _dist2(busPoint, snapped);
+
+        if (d < bestDist) {
+          bestDist = d;
+          bestPoint = snapped;
+        }
+      }
+    }
+
+    return bestPoint ?? busPoint;
+  }
+
+  LatLng _projectPoint(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude, ay = a.latitude;
+    final bx = b.longitude, by = b.latitude;
+    final px = p.longitude, py = p.latitude;
+
+    final dx = bx - ax;
+    final dy = by - ay;
+
+    if (dx == 0 && dy == 0) return a;
+
+    final t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+    final clamped = t.clamp(0.0, 1.0);
+
+    return LatLng(
+      ay + dy * clamped,
+      ax + dx * clamped,
+    );
+  }
+
   double _angleDiff(double a, double b) {
     final d = (a - b).abs() % 360;
     return d > 180 ? 360 - d : d;
@@ -410,6 +456,9 @@ class _MapScreenState extends State<MapScreen> {
   // ============================================================
   // 🚌 NEW: TEST BUS HELPERS (ADDED ONLY)
   // ============================================================
+
+  /*
+
   void _startTestBus() {
     _busTimer?.cancel();
 
@@ -463,15 +512,19 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+
+   */
+
   // ============================================================
   // UI
   // ============================================================
   @override
   Widget build(BuildContext context) {
-
     final List<Marker> busMarkers = _buses.map((bus) {
-      return Marker(
-        point: LatLng(bus.lat, bus.lon),
+    final snapped = _snapToRoutes(LatLng(bus.lat, bus.lon));
+
+    return Marker(
+    point: snapped,
         width: 36,
         height: 36,
         child: Transform.rotate(
@@ -517,8 +570,8 @@ class _MapScreenState extends State<MapScreen> {
             // 🔒 rotation locked
             interactionOptions: const InteractionOptions(
               flags: InteractiveFlag.drag |
-              InteractiveFlag.pinchZoom |
-              InteractiveFlag.doubleTapZoom,
+                  InteractiveFlag.pinchZoom |
+                  InteractiveFlag.doubleTapZoom,
             ),
 
             onPositionChanged: (pos, _) {
@@ -533,37 +586,40 @@ class _MapScreenState extends State<MapScreen> {
               userAgentPackageName: 'com.busline.bus_line',
             ),
 
-            PolylineLayer(
-              polylines: routeShapes.values
-                  .map(
-                    (pts) => Polyline(
-                  points: pts,
-                  strokeWidth: 3,
-                  color: Colors.blue.withOpacity(0.35),
-                ),
-              )
-                  .toList(),
-            ),
+            // 🛑 STATIC ROUTES DISABLED FOR LIVE BUS DEBUG
+/*
+PolylineLayer(
+  polylines: routeShapes.values
+      .map(
+        (pts) => Polyline(
+          points: pts,
+          strokeWidth: 3,
+          color: Colors.blue.withOpacity(0.35),
+        ),
+      )
+      .toList(),
+),
+*/
 
             // 🚌 TEST BUS MARKER
-            if (busMarkers.isNotEmpty)
-              MarkerLayer(markers: busMarkers),
+            if (busMarkers.isNotEmpty) MarkerLayer(markers: busMarkers),
 
-            // 🚏 STOPS (unchanged)
-            if (_currentZoom >= stopVisibleZoom)
-              MarkerLayer(
-                markers: directedStops.map((s) {
-                  return Marker(
-                    point: s.point,
-                    width: 22,
-                    height: 22,
-                    child: SvgPicture.asset(s.iconPath),
-                  );
-                }).toList(),
-              ),
+            // 🚏 STOPS (DISABLED FOR LIVE BUS DEBUG)
+/*
+if (_currentZoom >= stopVisibleZoom)
+  MarkerLayer(
+    markers: directedStops.map((s) {
+      return Marker(
+        point: s.point,
+        width: 22,
+        height: 22,
+        child: SvgPicture.asset(s.iconPath),
+      );
+    }).toList(),
+  ),
+*/
           ],
         ),
-
         if (_loading)
           const Positioned(
             top: 16,
