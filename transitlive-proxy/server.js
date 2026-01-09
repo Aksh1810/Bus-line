@@ -18,20 +18,24 @@ protobuf.load("gtfs-realtime.proto").then(root => {
 });
 
 // Vehicles endpoint
-app.get("/vehicles", (req, res) => {
+let tick = 0;
+
+app.get("/vehicles", async (req, res) => {
+  tick += 1;
+
   res.json([
     {
       id: "bus-101",
-      latitude: 50.4452,
+      latitude: 50.4452 + tick * 0.00005,
       longitude: -104.6189,
-      bearing: 270
+      bearing: 270,
     },
     {
       id: "bus-102",
       latitude: 50.448,
-      longitude: -104.62,
-      bearing: 90
-    }
+      longitude: -104.62 + tick * 0.00005,
+      bearing: 90,
+    },
   ]);
 });
 

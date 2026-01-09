@@ -28,12 +28,6 @@ class _MapScreenState extends State<MapScreen> {
   List<Bus> _buses = [];
   Timer? _liveBusTimer;
 
-  double _busRotation(double bearingDeg) {
-    // Convert compass bearing (0=N) → Flutter angle (0=E)
-    // PNG faces WEST → add 180°
-    return (bearingDeg - 90 + 180) * pi / 180;
-  }
-
   // shape_id -> polyline points
   final Map<String, List<LatLng>> routeShapes = {};
 
@@ -106,9 +100,6 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _loading = true);
     await _loadShapes();
     await _loadStopsAndAssignDirections();
-
-    // 🚌 NEW: start the test bus only after shapes exist
-    // _startTestBus();
 
     setState(() => _loading = false);
   }
@@ -453,67 +444,24 @@ class _MapScreenState extends State<MapScreen> {
     return (atan2(y, x) * 180 / pi + 360) % 360;
   }
 
-  // ============================================================
-  // 🚌 NEW: TEST BUS HELPERS (ADDED ONLY)
-  // ============================================================
+  double _bearingFromRoute(LatLng busPos) {
+    double bestDist = double.infinity;
+    double bestBearing = 0;
 
-  /*
+    for (final pts in routeShapes.values) {
+      for (int i = 0; i < pts.length - 1; i++) {
+        final a = pts[i];
+        final b = pts[i + 1];
 
-  void _startTestBus() {
-    _busTimer?.cancel();
-
-    if (routeShapes.isEmpty) {
-
-      return;
-    }
-
-    // Pick the first available shape for the test bus
-    _busShapeId = routeShapes.keys.first;
-    _busSegIndex = 0;
-    _busT = 0.0;
-
-    _busTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-      final pts = routeShapes[_busShapeId];
-      if (pts == null || pts.length < 2) return;
-
-      _busT += _busSpeed;
-
-      if (_busT >= 1.0) {
-        _busT = 0.0;
-        _busSegIndex++;
-
-        if (_busSegIndex >= pts.length - 1) {
-          _busSegIndex = 0; // loop back to start
+        final d = _pointToSegmentDistance2(busPos, a, b);
+        if (d < bestDist) {
+          bestDist = d;
+          bestBearing = _bearing(a, b);
         }
       }
-
-      // Update stable bearing ONLY if this segment has real length
-      final a = pts[_busSegIndex];
-      final b = pts[_busSegIndex + 1];
-
-      final dx = (b.longitude - a.longitude).abs();
-      final dy = (b.latitude - a.latitude).abs();
-
-      if (dx > 1e-7 || dy > 1e-7) {
-        _stableBusBearingDeg = _bearing(a, b);
-      }
-
-      setState(() {});
-    });
+    }
+    return bestBearing;
   }
-
-  LatLng _busPosition(List<LatLng> pts) {
-    final a = pts[_busSegIndex];
-    final b = pts[_busSegIndex + 1];
-
-    return LatLng(
-      a.latitude + (b.latitude - a.latitude) * _busT,
-      a.longitude + (b.longitude - a.longitude) * _busT,
-    );
-  }
-
-
-   */
 
   // ============================================================
   // UI
@@ -521,14 +469,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Marker> busMarkers = _buses.map((bus) {
-    final snapped = _snapToRoutes(LatLng(bus.lat, bus.lon));
+      final snapped = _snapToRoutes(LatLng(bus.lat, bus.lon));
 
-    return Marker(
-    point: snapped,
+      return Marker(
+        point: snapped,
         width: 36,
         height: 36,
         child: Transform.rotate(
-          angle: _busRotation(bus.bearing),
+          angle:  _bearingFromRoute(LatLng(bus.lat, bus.lon)) * pi / 180,
           alignment: Alignment.center,
           child: Container(
             width: 34,
@@ -587,19 +535,17 @@ class _MapScreenState extends State<MapScreen> {
             ),
 
             // 🛑 STATIC ROUTES DISABLED FOR LIVE BUS DEBUG
-/*
-PolylineLayer(
-  polylines: routeShapes.values
-      .map(
-        (pts) => Polyline(
-          points: pts,
-          strokeWidth: 3,
-          color: Colors.blue.withOpacity(0.35),
-        ),
-      )
-      .toList(),
-),
-*/
+
+            PolylineLayer(
+              polylines: routeShapes.values
+                  .map(
+                    (pts) => Polyline(
+                        points: pts,
+                        strokeWidth: 3,
+                        color: Colors.blue.withOpacity(0.5)),
+                  )
+                  .toList(),
+            ),
 
             // 🚌 TEST BUS MARKER
             if (busMarkers.isNotEmpty) MarkerLayer(markers: busMarkers),
