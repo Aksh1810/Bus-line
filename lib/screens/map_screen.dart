@@ -476,7 +476,7 @@ class _MapScreenState extends State<MapScreen> {
         width: 36,
         height: 36,
         child: Transform.rotate(
-          angle:  _bearingFromRoute(LatLng(bus.lat, bus.lon)) * pi / 180,
+          angle: _bearingFromRoute(snapped) * pi / 180,
           alignment: Alignment.center,
           child: Container(
             width: 34,

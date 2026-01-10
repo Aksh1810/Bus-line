@@ -42,3 +42,39 @@ app.get("/vehicles", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚍 Regina GTFS proxy running at http://localhost:${PORT}`);
 });
+
+const fs = require("fs");
+const path = require("path");
+
+app.get("/stops", (req, res) => {
+  try {
+    const filePath = path.resolve(__dirname, "gtfs", "stops.txt");
+
+    console.log("Loading stops from:", filePath);
+
+    const raw = fs.readFileSync(filePath, "utf8");
+
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const header = lines[0].split(",");
+
+    const nameI = header.indexOf("stop_name");
+    const latI = header.indexOf("stop_lat");
+    const lonI = header.indexOf("stop_lon");
+
+    const stops = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(",");
+      stops.push({
+        name: c[nameI],
+        lat: parseFloat(c[latI]),
+        lon: parseFloat(c[lonI]),
+      });
+    }
+
+    res.json(stops);
+  } catch (e) {
+    console.error("STOP LOAD ERROR:", e.message);
+    res.status(500).json({ error: "Failed to load stops" });
+  }
+});
