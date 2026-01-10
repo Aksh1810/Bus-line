@@ -111,7 +111,6 @@ class _MapScreenState extends State<MapScreen> {
             // skip invalid stop
           }
         }
-
         setState(() {
           _stops = parsedStops;
         });
