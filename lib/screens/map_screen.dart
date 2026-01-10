@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../models/bus.dart';
+import '../models/stop.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -16,7 +17,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-double? _stableBusBearingDeg;
+
 
 class _MapScreenState extends State<MapScreen> {
   final LatLng reginaCenter = const LatLng(50.4452, -104.6189);
@@ -32,7 +33,7 @@ class _MapScreenState extends State<MapScreen> {
   final Map<String, List<LatLng>> routeShapes = {};
 
   // final stops with chosen direction icon
-  final List<_DirectedStop> directedStops = [];
+  List<Stop> _stops = [];
 
   bool _loading = true;
 
@@ -44,11 +45,6 @@ class _MapScreenState extends State<MapScreen> {
   // 🚌 NEW: TEST BUS (ADDED ONLY - does not touch stop logic)
   // ============================================================
   Timer? _busTimer;
-  String? _busShapeId; // which route (shape) the test bus follows
-  int _busSegIndex = 0; // which segment in that shape
-  double _busT = 0.0; // 0..1 progress along the segment
-  static const double _busSpeed = 0.04; // adjust speed if needed
-  static const double busVisibleZoom = 12.0; // show bus after this zoom
 
   // If your bus.svg points LEFT by default, set this to +pi/2 or +pi etc.
   // Try 0 first. If bus faces wrong direction, change to:
@@ -60,6 +56,7 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
 
     _loadAll(); // ← REQUIRED
+    _fetchStops();
     _fetchLiveBuses();
 
     _liveBusTimer = Timer.periodic(
@@ -96,10 +93,39 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _fetchStops() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:3000/stops'),
+      );
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+
+        final List<Stop> parsedStops = [];
+
+        for (final e in data) {
+          try {
+            parsedStops.add(Stop.fromJson(e));
+          } catch (_) {
+            // skip invalid stop
+          }
+        }
+
+        setState(() {
+          _stops = parsedStops;
+        });
+
+        debugPrint('Stops received: ${_stops.length}');
+      }
+    } catch (e) {
+      debugPrint('Stop fetch error: $e');
+    }
+  }
+
   Future<void> _loadAll() async {
     setState(() => _loading = true);
     await _loadShapes();
-    await _loadStopsAndAssignDirections();
 
     setState(() => _loading = false);
   }
@@ -176,45 +202,6 @@ class _MapScreenState extends State<MapScreen> {
   /* ============================================================
      LOAD STOPS + ASSIGN DIRECTIONS
   ============================================================ */
-  Future<void> _loadStopsAndAssignDirections() async {
-    directedStops.clear();
-
-    final raw = await rootBundle.loadString('assets/gtfs/stops.txt');
-    final rows = _parseGtfs(raw);
-
-    if (rows.isEmpty) {
-      debugPrint('❌ stops.txt parsed with no rows');
-      return;
-    }
-
-    final header = rows.first;
-    final nameI = header.indexOf('stop_name');
-    final latI = header.indexOf('stop_lat');
-    final lonI = header.indexOf('stop_lon');
-
-    debugPrint('CSV rows: ${rows.length}');
-
-    for (int i = 1; i < rows.length; i++) {
-      final r = rows[i];
-      if (r.length <= max(nameI, max(latI, lonI))) continue;
-
-      final name = nameI >= 0 ? r[nameI] : '';
-      final lat = double.tryParse(r[latI]);
-      final lon = double.tryParse(r[lonI]);
-      if (lat == null || lon == null) continue;
-
-      final stopPoint = LatLng(lat, lon);
-      final bearing = _bestBearingForStop(stopPoint, name);
-      final icon = _iconFromBearing(bearing);
-
-      directedStops.add(_DirectedStop(
-        point: stopPoint,
-        iconPath: icon,
-      ));
-    }
-
-    debugPrint('✅ Parsed stops count: ${directedStops.length}');
-  }
 
   /* ============================================================
      BEARING LOGIC
@@ -350,12 +337,6 @@ class _MapScreenState extends State<MapScreen> {
   /* ============================================================
      ICONS
   ============================================================ */
-  String _iconFromBearing(double b) {
-    if (b >= 45 && b < 135) return 'assets/icons/stop_right.svg';
-    if (b >= 135 && b < 225) return 'assets/icons/stop_down.svg';
-    if (b >= 225 && b < 315) return 'assets/icons/stop_left.svg';
-    return 'assets/icons/stop_up.svg';
-  }
 
   /* ============================================================
      MATH HELPERS
@@ -542,7 +523,7 @@ class _MapScreenState extends State<MapScreen> {
                     (pts) => Polyline(
                         points: pts,
                         strokeWidth: 3,
-                        color: Colors.blue.withOpacity(0.5)),
+                        color: Colors.blue),
                   )
                   .toList(),
             ),
@@ -551,19 +532,23 @@ class _MapScreenState extends State<MapScreen> {
             if (busMarkers.isNotEmpty) MarkerLayer(markers: busMarkers),
 
             // 🚏 STOPS (DISABLED FOR LIVE BUS DEBUG)
-/*
-if (_currentZoom >= stopVisibleZoom)
-  MarkerLayer(
-    markers: directedStops.map((s) {
-      return Marker(
-        point: s.point,
-        width: 22,
-        height: 22,
-        child: SvgPicture.asset(s.iconPath),
-      );
-    }).toList(),
-  ),
-*/
+
+            if (_currentZoom >= stopVisibleZoom)
+              MarkerLayer(
+                markers: _stops.map((s) {
+                  return Marker(
+                    point: LatLng(s.lat, s.lon),
+                    width: 18,
+                    height: 18,
+                    child: const Icon(
+                      Icons.circle,
+                      size: 6,
+                      color: Colors.black,
+                    ),
+                  );
+                }).toList(),
+              ),
+
           ],
         ),
         if (_loading)
@@ -586,15 +571,6 @@ if (_currentZoom >= stopVisibleZoom)
 // Helper classes (REQUIRED — were missing)
 // ============================================================
 
-class _DirectedStop {
-  final LatLng point;
-  final String iconPath;
-
-  _DirectedStop({
-    required this.point,
-    required this.iconPath,
-  });
-}
 
 class _CandidateHit {
   final double score; // distance score
