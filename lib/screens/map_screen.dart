@@ -461,10 +461,17 @@ class _MapScreenState extends State<MapScreen> {
         final score = stopDirectionScore[stopId];
 
         if (score != null) {
-          // direction_id: 0 = NB/EB, 1 = SB/WB
-          bearing = score >= 0 ? 0 : 180;
+          // Decide axis from road geometry
+          final axis = _roadAxisBearingAtStop(point);
+
+          if (axis >= 45 && axis < 135) {
+            // East–West road
+            bearing = score >= 0 ? 90 : 270; // EB / WB
+          } else {
+            // North–South road
+            bearing = score >= 0 ? 0 : 180;  // NB / SB
+          }
         } else {
-          // fallback (very rare)
           bearing = _bestBearingForStop(point, name);
         }
 

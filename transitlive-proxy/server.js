@@ -83,7 +83,7 @@ app.get("/stops", (req, res) => {
       const score = stopDirections[stopId] ?? 0;
 
       stops.push({
-        stopId,
+        stop_id: stopId,
         name: c[nameI],
         lat,
         lon,

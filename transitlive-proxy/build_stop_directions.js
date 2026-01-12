@@ -1,12 +1,14 @@
 const fs = require("fs");
 const path = require("path");
 
-// Absolute base path (project root)
+// transitlive-proxy directory
 const ROOT = __dirname;
 
-// Correct GTFS paths
-const stopTimesPath = path.join(ROOT, "assets/gtfs/stop_times.txt");
-const tripsPath     = path.join(ROOT, "assets/gtfs/trips.txt");
+// 👇 GTFS is one level UP, inside bus_line/assets/gtfs
+const GTFS_DIR = path.join(ROOT, "..", "assets", "gtfs");
+
+const stopTimesPath = path.join(GTFS_DIR, "stop_times.txt");
+const tripsPath     = path.join(GTFS_DIR, "trips.txt");
 
 // Read files
 const stopTimes = fs.readFileSync(stopTimesPath, "utf8").trim().split("\n");
@@ -15,9 +17,7 @@ const trips     = fs.readFileSync(tripsPath, "utf8").trim().split("\n");
 const tripDir = {};
 const stopScore = {};
 
-// ─────────────────────────────
-// Parse trips.txt
-// ─────────────────────────────
+// ─── trips.txt ─────────────────────────
 const tripHeader = trips[0].split(",");
 const tripIdI = tripHeader.indexOf("trip_id");
 const dirI    = tripHeader.indexOf("direction_id");
@@ -28,9 +28,7 @@ for (let i = 1; i < trips.length; i++) {
   tripDir[r[tripIdI]] = parseInt(r[dirI] || "0", 10);
 }
 
-// ─────────────────────────────
-// Parse stop_times.txt
-// ─────────────────────────────
+// ─── stop_times.txt ────────────────────
 const stopHeader = stopTimes[0].split(",");
 const stopI = stopHeader.indexOf("stop_id");
 const tripI = stopHeader.indexOf("trip_id");
@@ -46,11 +44,8 @@ for (let i = 1; i < stopTimes.length; i++) {
   stopScore[r[stopI]] += dir === 0 ? 1 : -1;
 }
 
-// ─────────────────────────────
-// Write output
-// ─────────────────────────────
-const outPath = path.join(ROOT, "assets/gtfs/stop_directions.json");
-
+// ─── WRITE OUTPUT ──────────────────────
+const outPath = path.join(ROOT, "gtfs", "stop_directions.json");
 fs.writeFileSync(outPath, JSON.stringify(stopScore, null, 2));
 
-console.log("✅ stop_directions.json created at assets/gtfs/");
+console.log("✅ stop_directions.json created");
