@@ -10,6 +10,14 @@ import '../models/stop.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+enum RoadAxis { eastWest, northSouth }
+
+class _StopSeq {
+  final String stopId;
+  final int seq;
+  _StopSeq(this.stopId, this.seq);
+}
+
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -17,7 +25,8 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-
+// stop_id -> direction score
+final Map<String, int> stopDirectionScore = {};
 
 class _MapScreenState extends State<MapScreen> {
   final LatLng reginaCenter = const LatLng(50.4452, -104.6189);
@@ -95,8 +104,11 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
-    await _loadShapes();      // FIRST
-    await _fetchLiveStops();  // THEN compute bearings
+
+    await _loadShapes();          // needed for fallback only
+    await _loadStopDirections();  // 🔑 NEW (authoritative)
+    await _fetchLiveStops();      // builds directedStops
+
     setState(() => _loading = false);
   }
 
@@ -116,6 +128,84 @@ class _MapScreenState extends State<MapScreen> {
      LOAD SHAPES
      ✅ NEW: sort points by shape_pt_sequence (GTFS-correct)
   ============================================================ */
+
+  LatLng? _findStopLatLng(String stopId) {
+    for (final s in directedStops) {
+      if (s.point.toString() == stopId) return s.point;
+    }
+    return null;
+  }
+
+  Future<void> _loadStopTimesAndComputeBearings() async {
+    final raw = await rootBundle.loadString('assets/gtfs/stop_times.txt');
+    final rows = _parseGtfs(raw);
+
+    if (rows.isEmpty) return;
+
+    final header = rows.first;
+    final tripI = header.indexOf('trip_id');
+    final stopI = header.indexOf('stop_id');
+    final seqI = header.indexOf('stop_sequence');
+
+    if (tripI < 0 || stopI < 0 || seqI < 0) {
+      debugPrint('❌ stop_times.txt missing required columns');
+      return;
+    }
+
+    // 1️⃣ Group stops by trip
+    final Map<String, List<_StopSeq>> trips = {};
+
+    for (int i = 1; i < rows.length; i++) {
+      final r = rows[i];
+      if (r.length <= max(tripI, max(stopI, seqI))) continue;
+
+      final tripId = r[tripI];
+      final stopId = r[stopI];
+      final seq = int.tryParse(r[seqI]);
+      if (seq == null) continue;
+
+      trips.putIfAbsent(tripId, () => []);
+      trips[tripId]!.add(_StopSeq(stopId, seq));
+    }
+
+    // 2️⃣ Collect bearings per stop
+    final Map<String, List<double>> stopAngles = {};
+
+    for (final trip in trips.values) {
+      trip.sort((a, b) => a.seq.compareTo(b.seq));
+
+      for (int i = 0; i < trip.length - 1; i++) {
+        final a = trip[i];
+        final b = trip[i + 1];
+
+        final stopA = _findStopLatLng(a.stopId);
+        final stopB = _findStopLatLng(b.stopId);
+        if (stopA == null || stopB == null) continue;
+
+        final bearing = _bearing(stopA, stopB);
+
+        stopAngles.putIfAbsent(a.stopId, () => []);
+        stopAngles[a.stopId]!.add(bearing);
+      }
+    }
+
+    // 3️⃣ Circular mean per stop
+    _stopBearings.clear();
+
+    for (final e in stopAngles.entries) {
+      double x = 0, y = 0;
+      for (final b in e.value) {
+        final r = b * pi / 180;
+        x += cos(r);
+        y += sin(r);
+      }
+      _stopBearings[e.key] =
+          (atan2(y, x) * 180 / pi + 360) % 360;
+    }
+
+    debugPrint('✅ GTFS stop directions computed: ${_stopBearings.length}');
+  }
+
   Future<void> _loadShapes() async {
     final raw = await rootBundle.loadString('assets/gtfs/shapes.txt');
     final rows = _parseGtfs(raw);
@@ -173,8 +263,37 @@ class _MapScreenState extends State<MapScreen> {
      BEARING LOGIC
      ✅ NEW: stability guard for intersections / noisy segments
   ============================================================ */
+
+  Future<void> _loadStopDirections() async {
+    final raw = await rootBundle.loadString(
+      'assets/gtfs/stop_directions.json',
+    );
+
+    final Map<String, dynamic> json = jsonDecode(raw);
+
+    stopDirectionScore.clear();
+
+    for (final e in json.entries) {
+      stopDirectionScore[e.key] = (e.value as num).toInt();
+    }
+
+    debugPrint('✅ stop_directions loaded: ${stopDirectionScore.length}');
+  }
+
+  // stop_id -> GTFS-derived bearing
+  final Map<String, double> _stopBearings = {};
+
   double _bestBearingForStop(LatLng stop, String stopName) {
     final hint = _directionHint(stopName);
+    // 🚌 NEW: live bus flow override (DIVIDED ROADS)
+    final busFlow = _busFlowHintNearStop(stop);
+    if (busFlow != null) {
+      final snapped = _snapAxisToCompass(busFlow);
+      if (hint == null || _angleDiff(hint, snapped) <= 45) {
+        return snapped;
+      }
+    }
+
     final hits = <_CandidateHit>[];
 
     // 1) collect nearby segments (same as you already do)
@@ -333,13 +452,29 @@ class _MapScreenState extends State<MapScreen> {
         final point = LatLng(lat, lon);
 
         // 🔑 SAME LOGIC AS BEFORE
-        final bearing = _bestBearingForStop(point, name);
+        final stopId = s['stop_id'] ?? s['id'];
+        if (stopId == null) continue;
+
+// 🔑 AUTHORITATIVE DIRECTION
+        double bearing;
+
+        final score = stopDirectionScore[stopId];
+
+        if (score != null) {
+          // direction_id: 0 = NB/EB, 1 = SB/WB
+          bearing = score >= 0 ? 0 : 180;
+        } else {
+          // fallback (very rare)
+          bearing = _bestBearingForStop(point, name);
+        }
+
         final icon = _iconFromBearing(bearing);
 
         directedStops.add(
-          _DirectedStop(
-            point: point,
-            iconPath: icon,
+            _DirectedStop(
+              stopId: stopId,
+              point: point,
+              iconPath: icon,
           ),
         );
       }
@@ -361,6 +496,30 @@ class _MapScreenState extends State<MapScreen> {
   /* ============================================================
      MATH HELPERS
   ============================================================ */
+
+  double? _busFlowHintNearStop(LatLng stop, {double maxDist = 0.00025}) {
+    final List<double> bearings = [];
+
+    for (final bus in _buses) {
+      final busPos = LatLng(bus.lat, bus.lon);
+      final d = _dist2(stop, busPos);
+
+      if (d < maxDist) {
+        bearings.add(_bearingFromRoute(busPos));
+      }
+    }
+
+    if (bearings.length < 2) return null;
+
+    double x = 0, y = 0;
+    for (final b in bearings) {
+      final r = b * pi / 180;
+      x += cos(r);
+      y += sin(r);
+    }
+
+    return (atan2(y, x) * 180 / pi + 360) % 360;
+  }
 
   RoadAxis _axisFromBearing(double b) {
   if ((b >= 45 && b < 135) || (b >= 225 && b < 315)) {
@@ -713,13 +872,13 @@ class _ShapePt {
 }
 
 class _DirectedStop {
+  final String stopId;
   final LatLng point;
   final String iconPath;
 
   _DirectedStop({
+    required this.stopId,
     required this.point,
     required this.iconPath,
   });
 }
-
-enum RoadAxis { eastWest, northSouth }

@@ -45,18 +45,26 @@ app.listen(PORT, () => {
 
 const fs = require("fs");
 const path = require("path");
+const directionsPath = path.resolve(__dirname, "gtfs", "stop_directions.json");
+
+let stopDirections = {};
+if (fs.existsSync(directionsPath)) {
+  stopDirections = JSON.parse(fs.readFileSync(directionsPath, "utf8"));
+  console.log(`✅ stop_directions loaded: ${Object.keys(stopDirections).length}`);
+} else {
+  console.warn("⚠️ stop_directions.json not found");
+}
 
 app.get("/stops", (req, res) => {
   try {
     const filePath = path.resolve(__dirname, "gtfs", "stops.txt");
-
     console.log("Loading stops from:", filePath);
 
     const raw = fs.readFileSync(filePath, "utf8");
-
     const lines = raw.split(/\r?\n/).filter(Boolean);
     const header = lines[0].split(",");
 
+    const idI = header.indexOf("stop_id");
     const nameI = header.indexOf("stop_name");
     const latI = header.indexOf("stop_lat");
     const lonI = header.indexOf("stop_lon");
@@ -65,10 +73,24 @@ app.get("/stops", (req, res) => {
 
     for (let i = 1; i < lines.length; i++) {
       const c = lines[i].split(",");
+
+      const stopId = c[idI];
+      const lat = parseFloat(c[latI]);
+      const lon = parseFloat(c[lonI]);
+
+      if (!stopId || isNaN(lat) || isNaN(lon)) continue;
+
+      const score = stopDirections[stopId] ?? 0;
+
       stops.push({
+        stopId,
         name: c[nameI],
-        lat: parseFloat(c[latI]),
-        lon: parseFloat(c[lonI]),
+        lat,
+        lon,
+        direction:
+          score > 0 ? "NB" :
+          score < 0 ? "SB" :
+          "UNK",
       });
     }
 

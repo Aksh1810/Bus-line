@@ -26,6 +26,5 @@ dependencies:
 
 flutter:
   assets:
-    - assets/gtfs/stops.txt
-    - assets/gtfs/shapes.txt
+    - assets/gtfs/
     - assets/icons/
