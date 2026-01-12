@@ -170,17 +170,14 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /* ============================================================
-     LOAD STOPS + ASSIGN DIRECTIONS
-  ============================================================ */
-
-  /* ============================================================
      BEARING LOGIC
      ✅ NEW: stability guard for intersections / noisy segments
   ============================================================ */
   double _bestBearingForStop(LatLng stop, String stopName) {
-    final hint = _directionHint(stopName); // degrees or null
+    final hint = _directionHint(stopName);
     final hits = <_CandidateHit>[];
 
+    // 1) collect nearby segments (same as you already do)
     for (final pts in routeShapes.values) {
       if (pts.length < 2) continue;
 
@@ -192,7 +189,7 @@ class _MapScreenState extends State<MapScreen> {
 
         final d2 = _pointToSegmentDistance2(stop, a, b);
 
-        // keep local (performance + avoids far wrong segments)
+        // only consider local segments
         if (d2 > 2e-8) continue;
 
         final bearing = _windowBearing(pts, i);
@@ -202,30 +199,38 @@ class _MapScreenState extends State<MapScreen> {
 
     if (hits.isEmpty) return 0;
 
-    // If stop_name has a direction hint, prefer candidates that match it first
-    List<_CandidateHit> pool = hits;
+    // 2) dominant axis vote (EW vs NS) over *hits*
+    int ew = 0, ns = 0;
+    for (final h in hits) {
+      final axis = _axisFromBearing(h.bearing);
+      if (axis == RoadAxis.eastWest) {
+        ew++;
+      } else {
+        ns++;
+      }
+    }
+    final RoadAxis dominantAxis = ew >= ns ? RoadAxis.eastWest : RoadAxis.northSouth;
+
+    // 3) build pool: start with axis-filtered hits
+    List<_CandidateHit> pool =
+    hits.where((h) => _axisFromBearing(h.bearing) == dominantAxis).toList();
+
+    if (pool.isEmpty) pool = hits;
+
+    // 4) if hint exists, prefer candidates near hint (but don’t force it if none match)
     if (hint != null) {
-      final hinted =
-          hits.where((h) => _angleDiff(h.bearing, hint) <= 95).toList();
+      final hinted = pool.where((h) => _angleDiff(h.bearing, hint) <= 95).toList();
       if (hinted.isNotEmpty) pool = hinted;
     }
 
-    // Sort by distance first
+    // 5) sort by distance and take top candidates (NOW this uses the right pool)
     pool.sort((a, b) => a.score.compareTo(b.score));
-
-    // Take top few and circular-mean them (reduces flip errors)
-
     final top = pool.take(10).toList();
 
-// 🔒 NEW: remove opposite-direction segments if majority agrees
+    // 6) remove opposite-direction segments if majority agrees
     if (top.length >= 3) {
       final base = top.first.bearing;
-      final sameDir = top
-          .where(
-            (h) => !_isOppositeDirection(h.bearing, base),
-          )
-          .toList();
-
+      final sameDir = top.where((h) => !_isOppositeDirection(h.bearing, base)).toList();
       if (sameDir.length >= 2) {
         top
           ..clear()
@@ -233,8 +238,7 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    // ✅ NEW: if the top candidates disagree too much (intersection),
-    // return the closest segment bearing (prevents random flipped arrows)
+    // 7) if candidates disagree wildly (intersection / loops), use closest segment
     double maxSpread = 0;
     for (int i = 0; i < top.length; i++) {
       for (int j = i + 1; j < top.length; j++) {
@@ -242,22 +246,21 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
     if (maxSpread >= 120) {
-      // “too messy” → closest is usually correct
       final closest = top.first.bearing;
       if (hint != null && _angleDiff(closest, hint) <= 95) return hint;
       return closest;
     }
 
+    // 8) circular mean
     double x = 0, y = 0;
     for (final h in top) {
       final rad = h.bearing * pi / 180.0;
       x += cos(rad);
       y += sin(rad);
     }
-
     final mean = (atan2(y, x) * 180 / pi + 360) % 360;
 
-    // Final snap toward hint if reasonably close (TransitLive-like)
+    // 9) final snap toward hint if reasonably close
     if (hint != null && _angleDiff(mean, hint) <= 95) return hint;
 
     return mean;
@@ -358,6 +361,106 @@ class _MapScreenState extends State<MapScreen> {
   /* ============================================================
      MATH HELPERS
   ============================================================ */
+
+  RoadAxis _axisFromBearing(double b) {
+  if ((b >= 45 && b < 135) || (b >= 225 && b < 315)) {
+  return RoadAxis.eastWest;
+  }
+  return RoadAxis.northSouth;
+  }
+
+  double _roadAxisBearingAtStop(LatLng stop) {
+    final List<double> axes = [];
+
+    for (final pts in routeShapes.values) {
+      for (int i = 0; i < pts.length - 1; i++) {
+        final a = pts[i];
+        final b = pts[i + 1];
+
+        final d2 = _pointToSegmentDistance2(stop, a, b);
+        if (d2 > 2e-8) continue; // same threshold you already trust
+
+        final bearing = _bearing(a, b);
+
+        // Normalize direction: treat NB/SB same, EB/WB same
+        final axis = bearing >= 180 ? bearing - 180 : bearing;
+        axes.add(axis);
+      }
+    }
+
+    if (axes.isEmpty) return 0;
+
+    // Circular mean of axes
+    double x = 0, y = 0;
+    for (final b in axes) {
+      final r = b * pi / 180;
+      x += cos(r);
+      y += sin(r);
+    }
+
+    return (atan2(y, x) * 180 / pi + 360) % 360;
+  }
+
+  double _snapAxisToCompass(double axis) {
+    if (axis >= 45 && axis < 135) return 90;   // East/West road
+    if (axis >= 135 && axis < 225) return 180; // North/South road
+    if (axis >= 225 && axis < 315) return 270;
+    return 0;
+  }
+
+  bool _isStopOnRightSideOfSegment(
+      LatLng stop,
+      LatLng a,
+      LatLng b,
+      ) {
+    final ax = a.longitude;
+    final ay = a.latitude;
+    final bx = b.longitude;
+    final by = b.latitude;
+    final px = stop.longitude;
+    final py = stop.latitude;
+
+    final dx = bx - ax;
+    final dy = by - ay;
+
+    final cross = dx * (py - ay) - dy * (px - ax);
+    return cross < 0; // right side
+  }
+
+
+  double _polarityFromRoadSide(LatLng stop) {
+    double bestDist = double.infinity;
+    LatLng? bestA;
+    LatLng? bestB;
+
+    for (final pts in routeShapes.values) {
+      for (int i = 0; i < pts.length - 1; i++) {
+        final d = _pointToSegmentDistance2(stop, pts[i], pts[i + 1]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestA = pts[i];
+          bestB = pts[i + 1];
+        }
+      }
+    }
+
+    if (bestA == null || bestB == null) return 0;
+
+    final bearing = _bearing(bestA, bestB);
+    final isRight = _isStopOnRightSideOfSegment(stop, bestA, bestB);
+
+    // North/South road
+    if (_angleDiff(bearing, 0) < 30 || _angleDiff(bearing, 180) < 30) {
+      return isRight ? 180 : 0; // SB : NB
+    }
+
+    // East/West road
+    if (_angleDiff(bearing, 90) < 30 || _angleDiff(bearing, 270) < 30) {
+      return isRight ? 270 : 90; // WB : EB
+    }
+
+    return bearing;
+  }
 
   LatLng _snapToRoutes(LatLng busPoint) {
     LatLng? bestPoint;
@@ -468,13 +571,14 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final List<Marker> busMarkers = _buses.map((bus) {
       final snapped = _snapToRoutes(LatLng(bus.lat, bus.lon));
+      final bearing = _bearingFromRoute(snapped);
 
       return Marker(
         point: snapped,
         width: 36,
         height: 36,
         child: Transform.rotate(
-          angle: _bearingFromRoute(snapped) * pi / 180,
+          angle: (bearing - 90) * pi / 180,
           alignment: Alignment.center,
           child: Container(
             width: 34,
@@ -550,7 +654,6 @@ class _MapScreenState extends State<MapScreen> {
 
             // 🚏 STOPS (DISABLED FOR LIVE BUS DEBUG)
 
-            if (_currentZoom >= stopVisibleZoom)
               if (_currentZoom >= stopVisibleZoom)
                 MarkerLayer(
                   markers: directedStops.map((s) {
@@ -618,3 +721,5 @@ class _DirectedStop {
     required this.iconPath,
   });
 }
+
+enum RoadAxis { eastWest, northSouth }
