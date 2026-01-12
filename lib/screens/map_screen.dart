@@ -32,10 +32,10 @@ class _MapScreenState extends State<MapScreen> {
   // shape_id -> polyline points
   final Map<String, List<LatLng>> routeShapes = {};
 
-  // final stops with chosen direction icon
-  List<Stop> _stops = [];
-
   bool _loading = true;
+
+  // final stops with chosen direction icon
+  final List<_DirectedStop> directedStops = [];
 
   // ✅ zoom handling
   double _currentZoom = 13.0;
@@ -56,7 +56,6 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
 
     _loadAll(); // ← REQUIRED
-    _fetchStops();
     _fetchLiveBuses();
 
     _liveBusTimer = Timer.periodic(
@@ -93,39 +92,11 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> _fetchStops() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://10.0.2.2:3000/stops'),
-      );
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-
-        final List<Stop> parsedStops = [];
-
-        for (final e in data) {
-          try {
-            parsedStops.add(Stop.fromJson(e));
-          } catch (_) {
-            // skip invalid stop
-          }
-        }
-        setState(() {
-          _stops = parsedStops;
-        });
-
-        debugPrint('Stops received: ${_stops.length}');
-      }
-    } catch (e) {
-      debugPrint('Stop fetch error: $e');
-    }
-  }
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
-    await _loadShapes();
-
+    await _loadShapes();      // FIRST
+    await _fetchLiveStops();  // THEN compute bearings
     setState(() => _loading = false);
   }
 
@@ -333,9 +304,56 @@ class _MapScreenState extends State<MapScreen> {
     return null;
   }
 
-  /* ============================================================
-     ICONS
-  ============================================================ */
+
+  Future<void> _fetchLiveStops() async {
+    try {
+      final response = await http.get(
+        Uri.parse('http://10.0.2.2:3000/stops'),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('❌ Stop fetch failed: ${response.statusCode}');
+        return;
+      }
+
+      final List data = jsonDecode(response.body);
+
+      directedStops.clear();
+
+      for (final s in data) {
+        final lat = (s['lat'] as num?)?.toDouble();
+        final lon = (s['lon'] as num?)?.toDouble();
+        final name = s['name'] ?? '';
+
+        if (lat == null || lon == null) continue;
+
+        final point = LatLng(lat, lon);
+
+        // 🔑 SAME LOGIC AS BEFORE
+        final bearing = _bestBearingForStop(point, name);
+        final icon = _iconFromBearing(bearing);
+
+        directedStops.add(
+          _DirectedStop(
+            point: point,
+            iconPath: icon,
+          ),
+        );
+      }
+
+      debugPrint('Stops received: ${directedStops.length}');
+      setState(() {});
+    } catch (e) {
+      debugPrint('Stop fetch error: $e');
+    }
+  }
+
+  String _iconFromBearing(double b) {
+    if (b >= 45 && b < 135) return 'assets/icons/stop_right.svg';
+    if (b >= 135 && b < 225) return 'assets/icons/stop_down.svg';
+    if (b >= 225 && b < 315) return 'assets/icons/stop_left.svg';
+    return 'assets/icons/stop_up.svg';
+  }
 
   /* ============================================================
      MATH HELPERS
@@ -533,20 +551,20 @@ class _MapScreenState extends State<MapScreen> {
             // 🚏 STOPS (DISABLED FOR LIVE BUS DEBUG)
 
             if (_currentZoom >= stopVisibleZoom)
-              MarkerLayer(
-                markers: _stops.map((s) {
-                  return Marker(
-                    point: LatLng(s.lat, s.lon),
-                    width: 18,
-                    height: 18,
-                    child: const Icon(
-                      Icons.circle,
-                      size: 6,
-                      color: Colors.black,
-                    ),
-                  );
-                }).toList(),
-              ),
+              if (_currentZoom >= stopVisibleZoom)
+                MarkerLayer(
+                  markers: directedStops.map((s) {
+                    return Marker(
+                      point: s.point,
+                      width: 22,
+                      height: 22,
+                      child: SvgPicture.asset(
+                        s.iconPath,
+                        fit: BoxFit.contain,
+                      ),
+                    );
+                  }).toList(),
+                ),
 
           ],
         ),
@@ -588,5 +606,15 @@ class _ShapePt {
   _ShapePt({
     required this.seq,
     required this.point,
+  });
+}
+
+class _DirectedStop {
+  final LatLng point;
+  final String iconPath;
+
+  _DirectedStop({
+    required this.point,
+    required this.iconPath,
   });
 }
