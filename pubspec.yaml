@@ -19,6 +19,9 @@ dependencies:
   # Networking
   http: ^1.2.2
 
+  # State management
+  provider: ^6.1.2
+
   # Assets & parsing
   csv: ^6.0.0
   flutter_svg: ^2.0.10
