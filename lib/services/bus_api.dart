@@ -4,7 +4,7 @@ import '../models/bus.dart';
 
 class BusApi {
   static const String _url =
-      'http://10.0.2.2:3000/vehicles'; // change if NOT android emulator
+      'http://localhost:3000/vehicles';
 
   static Future<List<Bus>> fetchBuses() async {
     final res = await http.get(Uri.parse(_url));

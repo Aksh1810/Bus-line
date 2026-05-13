@@ -77,7 +77,7 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _fetchLiveBuses() async {
     try {
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:3000/vehicles'),
+        Uri.parse('http://localhost:3000/vehicles'),
       );
 
       if (response.statusCode == 200) {
@@ -326,7 +326,7 @@ class _MapScreenState extends State<MapScreen> {
 Future<void> _fetchLiveStops() async {
   try {
     final response = await http.get(
-      Uri.parse('http://10.0.2.2:3000/stops'),
+      Uri.parse('http://localhost:3000/stops'),
     );
 
     if (response.statusCode != 200) {

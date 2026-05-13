@@ -5,6 +5,11 @@ const protobuf = require("protobufjs");
 const app = express();
 const PORT = 3000;
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+});
+
 // Regina Transit GTFS-Realtime Vehicle Positions
 const VEHICLE_URL =
   "https://transitfeeds.com/p/regina-transit/318/latest/download";
@@ -80,17 +85,15 @@ app.get("/stops", (req, res) => {
 
       if (!stopId || isNaN(lat) || isNaN(lon)) continue;
 
-      const score = stopDirections[stopId] ?? 0;
+      const bearing = stopDirections[stopId];
+      const dirMap = { 0: 'NB', 90: 'EB', 180: 'SB', 270: 'WB' };
 
       stops.push({
         stop_id: stopId,
         name: c[nameI],
         lat,
         lon,
-        direction:
-          score > 0 ? "NB" :
-          score < 0 ? "SB" :
-          "UNK",
+        direction: dirMap[bearing] ?? 'UNK',
       });
     }
 
