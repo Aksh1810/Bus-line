@@ -1,46 +1,74 @@
 # Bus Line 🚌
 
-Bus Line is a modern, cross-platform transit application built with Flutter, designed to provide commuters with an intuitive and real-time transit experience. It combines a responsive mobile interface with a custom Node.js backend to process and visualize transit data efficiently.
+Bus Line is a cross-platform transit application built with Flutter. It pairs a mobile map client with a lightweight Node.js proxy for GTFS/static data processing.
 
 ## 🎯 What it Does
 
-Bus Line transforms complex transit data into a user-friendly visual interface, helping users understand their transit network at a glance.
+Bus Line transforms complex transit data into a user-friendly visual interface.
 
 ### 🗺️ Interactive Transit Map
-The core of the application is a high-performance map interface powered by `flutter_map` and OpenStreetMap.
-- **Visualizes Routes**: Renders precise bus route paths (polylines) derived from GTFS shape data.
-- **Smart Stops**: Displays bus stops with intelligent directional icons (e.g., Northbound vs. Southbound arrows), helping users stand on the correct side of the street.
-- **Live Vehicle Tracking**: Shows moving bus icons on the map. *Note: Currently, vehicle positions are simulated for testing and demonstration purposes.*
+- **Visualizes Routes**: Renders bus route polylines from GTFS shape data.
+- **Smart Stops**: Shows directional stop icons (NB/SB/EB/WB style).
+- **Live Vehicle Tracking**: Shows moving bus icons on the map. *Note: vehicle positions are currently simulated for testing and demonstration purposes.*
 
 ### 🏝️ iOS Live Activities
-Bus Line integrates deeply with iOS features to keep users informed without needing to open the app.
-- **Dynamic Island Support**: Users can start a "ride" to track their bus directly from the Dynamic Island on supported iPhones.
-- **Lock Screen Updates**: Essential trip information is visible right on the lock screen via Live Activities.
+- **Dynamic Island Support**: Track an active ride from Dynamic Island on supported iPhones.
+- **Lock Screen Updates**: Show key trip status through Live Activities.
 
 ### 📍 Location Services
-- **Nearby Access**: Uses device location to instantly center the map on the user's surroundings, highlighting the nearest transit options.
+- **Nearby Access**: Centers the map around the user and nearby transit options.
+
+---
+
+## 🧱 Architecture
+
+- **Flutter client (`lib/`)**: UI, map rendering, stop/route presentation, and periodic vehicle polling.
+- **Node.js proxy (`transitlive-proxy/`)**: GTFS-oriented backend endpoints consumed by the app (including simulated vehicle movement today).
+
+---
+
+## ▶️ Run the Project
+
+### 1) Flutter client
+```bash
+flutter pub get
+flutter run
+```
+
+Platform-specific examples:
+```bash
+flutter run -d android
+flutter run -d ios
+```
+
+### 2) Node.js proxy
+```bash
+cd transitlive-proxy
+npm install
+npm start
+```
+
+The Flutter app currently points to `http://10.0.2.2:3000` for Android emulator use. Update the base URL for iOS simulator or physical devices as needed.
 
 ---
 
 ## 🚀 Planned Features
 
-The project is actively evolving from a prototype to a fully-featured transit assistant. The roadmap includes:
+1. **Real-World Data Integration**
+   - Connect the proxy to live GTFS-Realtime feeds.
+   - Replace simulated vehicle positions with agency GPS data.
 
-### 1. Real-World Data Integration
-- Connect the current Node.js proxy to live GTFS-Realtime feeds (e.g., TransitLive or other municipal open data portals).
-- Replace simulated "ticking" vehicle positions with actual GPS coordinates from transit agencies.
+2. **Enhanced Trip Planning**
+   - Add routing from current location to destination.
+   - Provide step-by-step guidance with transfers.
 
-### 2. Enhanced Trip Planning
-- Implement a routing engine to allow users to plan trips from their current location to a destination.
-- Provide step-by-step navigation instructions including walking segments and transfers.
+3. **Advanced Live Activities**
+   - Add ETA, delay warnings, and stop countdown details.
+   - Let users pin a specific bus for background tracking.
 
-### 3. Advanced Live Activities
-- Enrich the Dynamic Island interface with estimated arrival times (ETA), delay warnings, and stop count countdowns.
-- Allow users to "pin" a specific bus to follow its progress in the background.
+4. **Smart Notifications**
+   - Arrival alerts (for example, “Your bus is 2 minutes away”).
+   - Service alerts for detours/cancellations.
 
-### 4. Smart Notifications
-- Push notifications for bus arrivals ("Your bus is 2 minutes away").
-- Service alerts for route detours or cancellations.
-
-### 5. Offline Capabilities
-- Cache static schedule data (stop times and route shapes) so basic network information is available even without an internet connection.
+5. **Offline Capabilities**
+   - Cache static schedule and route data for limited offline use.
