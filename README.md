@@ -1,4 +1,4 @@
-# Bus Line 🚌
+# Bus Line
 
 Bus Line is a cross-platform transit application built with Flutter. It pairs a mobile map client with a lightweight Node.js proxy for GTFS/static data processing.
 
